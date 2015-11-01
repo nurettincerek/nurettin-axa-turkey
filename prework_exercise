@@ -1,0 +1,71 @@
+> #Nurettin Cerek Axa Turkey
+> #Data Science Training December 2015
+> 
+> #Exercise 3.7.1 from A Beginner's Guide to R
+> #Using the read.table function and accessing variables from a data frame with epidemiological data
+> 
+> #Import data set from Birdflu.txt file
+> flu_nc <- read.delim("/Volumes/nifty 1/BirdFlu.txt", stringsAsFactors=FALSE)
+> 
+> #View data frame
+> View(flu_nc)
+> 
+> #Use str and names functions to review data frame
+> str(flu_nc)
+'data.frame':	15 obs. of  13 variables:
+ $ Country    : chr  "Azerbaijan" "Bangladesh" "Cambodia" "China" ...
+ $ X2003cases : int  0 0 0 1 0 0 0 0 0 0 ...
+ $ X2003deaths: int  0 0 0 1 0 0 0 0 0 0 ...
+ $ X2004cases : int  0 0 0 0 0 0 0 0 0 0 ...
+ $ X2004deaths: int  0 0 0 0 0 0 0 0 0 0 ...
+ $ X2005cases : int  0 0 4 8 0 0 20 0 0 0 ...
+ $ X2005deaths: int  0 0 4 5 0 0 13 0 0 0 ...
+ $ X2006cases : int  8 0 2 13 1 18 55 3 0 0 ...
+ $ X2006deaths: int  5 0 2 8 0 10 45 2 0 0 ...
+ $ X2007cases : int  0 0 1 5 0 25 42 0 2 1 ...
+ $ X2007deaths: int  0 0 1 3 0 9 37 0 2 0 ...
+ $ X2008cases : int  0 1 0 3 0 7 18 0 0 0 ...
+ $ X2008deaths: int  0 0 0 3 0 3 15 0 0 0 …
+>
+> names(flu_nc)
+ [1] "Country"     "X2003cases"  "X2003deaths" "X2004cases"  "X2004deaths" "X2005cases"  "X2005deaths" "X2006cases"  "X2006deaths" "X2007cases"  "X2007deaths" "X2008cases"  "X2008deaths"
+> 
+> #Print the number of bird flu cases in 2003
+> flu_nc[,'X2003cases']
+ [1] 0 0 0 1 0 0 0 0 0 0 0 0 0 0 3
+> 
+>
+> #What is the total number of bird flu cases in 2003 and in 2005?
+> sum(flu_nc[,2])
+[1] 4
+> sum(flu_nc[,6])
+[1] 98
+> 
+>
+> #Which country has had the most cases?
+> flu_nc$TotalCases <- flu_nc$X2003cases+flu_nc$X2004cases+flu_nc$X2005cases+flu_nc$X2006cases+flu_nc$X2007cases+flu_nc$X2008cases
+> which.max(flu_nc$TotalCases)
+[1] 7
+> flu_nc[7,"Country"]
+[1] “Indonesia"
+>
+>
+> #Which country has had the least bird flu deaths?
+> flu_nc$TotalDeaths <- flu_nc$X2003deaths+flu_nc$X2004deaths+flu_nc$X2005deaths+flu_nc$X2006deaths+flu_nc$X2007deaths+flu_nc$X2008deaths
+> flu_nc$TotalDeaths
+ [1]   5   0   7  20   0  22 110   2   2   0   1   1  17   4  52
+>
+> which.min(flu_nc$TotalDeaths)
+[1] 2
+> flu_nc[2,"Country"]
+[1] “Bangladesh"
+>
+>#What is the total number of bird flu cases per country?
+> flu_nc$TotalCases
+ [1]   8   1   7  30   1  50 135   3   2   1   1   3  25  12 106
+>
+>
+>#What is the total number of cases per year?
+> Total_cases_per_year <- c(sum(flu_nc[,2]), sum(flu_nc[,4]), sum(flu_nc[,6]), sum(flu_nc[,8]), sum(flu_nc[,10]), sum(flu_nc[,12]))
+> Total_cases_per_year
+[1]   4  46  98 115  88  34
