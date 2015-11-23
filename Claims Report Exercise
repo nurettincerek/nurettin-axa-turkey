@@ -1,0 +1,444 @@
+---
+title: "CLAIMS DATA REPORTING"
+author : "Nurettin Cerek / Axa Turkey"
+output: html_document
+---
+
+# 1. Prepare your working environment and your database
+
+## 1.a. Libraries
+
+To begin with, load the packages `data.table` and `ggplot2` using the `library()` function.  
+
+```{r}
+# Load libraries :
+library(data.table)
+library(ggplot2)
+```
+
+## 1.b. Load your database
+
+The database you will work on was extracted from a motor claims record. You now have to load it in your working environment:
+
+1. Type the path to the folder in which you saved the "claims_database.csv" file provided
+2. Load the database using the function `fread()` from the `data.table` package, and name it "DT". Don't forget to give the function arguments ! The file separator `sep` is a semi-column (";") and a `header` is given in the database.  
+
+```{r}
+# We did you save your file ?
+data_nc <- read.csv("C:/Rsource/claims_database.csv", sep=";")
+View(data_nc)
+```
+
+## 1.c. Check the shape of your database
+
+You now want to know how many observations and how many variables your dataset contains : how do you do it ?  
+
+```{r}
+# Number of observations :
+# Number of variables :
+str(data_nc)
+```
+
+Please display the first lines of your dataset.
+
+```{r}
+# Display the first lines of the database :
+head(data_nc)
+```
+
+
+# 2. Understand how your dataset was loaded by R
+
+## 2.b. Variable type check
+
+Combine the `class` function to the `lapply` function to retrieve the types of all the variables.
+
+```{r}
+# Check variables types using lapply and class functions :
+lapply(data_nc, class)
+```
+
+
+## 2.c. Change some variable types
+
+### (i) Deal with dates
+
+**Q1. What is the infered type for the "date" variable ?**  
+
+**Answer : ** Factor
+
+
+Transform your "date" `character`  variable into a proper "date" `date` variable. 
+
+- Name the new transformed variable "date2". 
+- Beware ! Use the `data.table` way to create this new "date2" variable in your dataset.
+
+```{r}
+# Create a "date2" variable with a proper date format from the initial "date" variable :
+data_nc$date2 <- as.Date(data_nc$date, "%d.%m.%Y")
+```
+
+
+Create the features "year", "month", "day" and "weekday" using these functions and the `data.table` way to create new variables.
+
+```{r}
+# Create time features
+data_nc$Year <- year(data_nc$date2)
+data_nc$Month <- month(data_nc$date2)
+data_nc$Day <- weekdays(data_nc$date2)
+```
+
+
+### (ii) Deal with categorical variables
+
+**Q2. Look at the variable dictionary joined. According to you, which variables can be understood as *categorical* ones ?**  
+
+**Answer : ** Severity and Drivability are categorical variables.
+
+Convert them into `factor` variables using the `as.factor()` function. Do not forget to convert the "drivable" variable into a `factor` one : a dummy is indeed a categorical variable ! 
+
+```{r}
+# Overwrite the categorical variables to change their type to "factor" :
+data_nc$Severity <- as.factor(data_nc$severity) 
+data_nc$Drivable <- as.factor(data_nc$drivable)
+data_nc$severity <- NULL
+data_nc$drivable <- NULL
+```
+
+Write a line of code to check if it worked well.
+
+```{r}
+# Check that you actually changed the variable types
+class(data_nc$Severity)
+class(data_nc$Drivable)
+```
+
+**1.** Retrieve the modalities contained in the "coverage" and "brand" variables
+```{r}
+# Display the modalities of the "coverage" variable :
+summary(data_nc$coverage)
+# Display the modalities of the "brand" variable :
+summary(data_nc$brand)
+# Display the number of modalities of the "brand" variable :
+str(summary(data_nc$brand))
+```
+
+**Q3. How many categories does the "brand" variable contain ?**  
+
+**Answer : 54
+
+**Is that easy to process ? If not, suggest a way to better deal with it.**  
+
+**Answer : ...
+
+**2.** Count for each vehicle category how many claims were registered
+```{r}
+# Count the number of vehicles repaired for each category :
+summary(data_nc$category)
+```
+
+**Q4. According to you, is there a modality which is badly represented ?**  
+
+**Answer : ** ...
+
+**3.** Cross the "repairer_agreement" with the "coverage" to derive the number claims handled by each type of garage per type of coverage :
+
+```{r}
+# Derive the number claims handled by each type of garage per type of coverage :
+DT_repairer_coverage <- data.frame(table(data_nc$repairer_agreement, data_nc$coverage))
+glassbreak_subset <- subset(DT_repairer_coverage, Var2 == 'Glass breakage')
+which.max(glassbreak_subset[,'Freq'])
+glassbreak_subset[2,]
+```
+
+**Q5. Which type of repairer handles more glass breakage claims than the others ?**  
+
+**Answer : ** NC "Aggreement prefered type of service handles most glass breakage damages."
+
+**4.** The "severity" variable can be considered as an ordered categorical variable, since the number associated refer to an arbitrary score and not to a meaningful numerical variable. Try to create a "severity_cat" variable as an ordered factor variable using the `ordered()` function derived from the "severity" variable.
+
+```{r}
+# Change the "severity" variable to an ordered factor one :
+data_nc$severity_cat = factor(data_nc$Severity, levels=c("1", "2", "3"), ordered=TRUE)
+levels(data_nc$severity_cat) <- c("low", "middle", "high")
+```
+
+# 3. Explore the database using wonderful charts
+
+## 3.a. Create a "Calendar view"
+
+### (i) Aggregate the cost and number of claims per day
+
+You have to compute *per day* :
+
+- the number of claims : call it "freqDay"
+- the total cost involved : call it "totalCostDay"
+- the average cost corresponding : call it "averageCostDay"
+
+```{r}
+# Create the database DT_perDay :
+DT_perDay <- aggregate(cost~Day, data=data_nc, sum)
+# Compute the average cost per day in the same table
+DT_perDay$freqDay <- as.numeric(table(data_nc$Day))
+DT_perDay$averageCostDay <- as.numeric(DT_perDay$cost/DT_perDay$freqDay)
+colnames(DT_perDay)[2] <- "totalCostDay"
+head(DT_perDay)
+# Create the database DT_byDate for calendar plotting
+DT_byDate <- aggregate(cost~date2, data=data_nc, sum)
+DT_byDate$cost <- as.numeric(DT_byDate$cost)
+DT_byDate$freqDay <- as.numeric(table(data_nc$date2))
+DT_byDate$averageCostDay <- DT_byDate$cost/DT_byDate$freqDay
+colnames(DT_byDate)[1] <- "Date"
+colnames(DT_byDate)[2] <- "totalCostDay"
+head(DT_byDate)
+```
+
+
+### (ii) Create the "Calendar view"
+
+Follow the steps below to create your own calendar view from the "DT_byDate" database !
+
+1. Install and load the `googleVis` package
+2. Check how the function `gvisCalendar` works in the "Help" corner (do not care about the "options" statements)
+3. Create three calendar views using this function :
+  - date variable : "date2"
+  - numerical variable : "totalCostDay", then "averageCostDay" and finally "freqDay"
+
+```{r, eval=FALSE}
+# Load the ggvis package :
+install.packages("googleVis")
+install.packages("ggvis")
+library(googleVis)
+op <- options(gvis.plot.tag='chart')
+```
+
+
+```{r, results="asis", tidy=TRUE, eval=FALSE}
+# Create your calendar view using the gvisCalendar function
+# Nurettin: I had a problem with ggplot :(, so I tried other ways as below for the plotting exercises.
+#
+# Total cost per day
+gvis1 <- gvisCalendar(DT_byDate, datevar = "Date", numvar = "totalCostDay", options = list(width=1100, height=600))
+plot(gvis1)
+# Average cost per day
+gvis2 <- gvisCalendar(DT_byDate, datevar = "Date", numvar = "averageCostDay", options = list(width=1100, height=600))
+plot(gvis2)
+# Number of claims per day
+gvis3 <- gvisCalendar(DT_byDate, datevar = "Date", numvar = "freqDay", options = list(width=1100, height=600))
+plot(gvis3)
+```
+
+**Q6. Looking closer at these calendar views, what do you notice ?**  
+
+**Answer : ** June 9th 2014 is the peak day for claim freq.
+
+### (iii) View it as a time series
+
+Plot the *average cost* per day you just calculated before (reuse the "DT_byDate" data table) as a line.
+
+```{r}
+# Plot the claims frequency per day using "ggplot2" package :
+plot_date_freq <- qplot(DT_byDate$Date, DT_byDate$freqDay)
+line_chart1 <- plot_date_freq + geom_line()
+line_chart1
+# There is also another way…
+plot(DT_byDate$Date, DT_byDate$freqDay, type="l")
+```
+
+**Q7. What do you notice ?**  
+
+**Answer : ** There is a peak day just at the start of June 2014
+
+## 3.b. Create a bar chart
+
+We are interested in the *number of claims* this time. First, please compute the *overall* number of claims per :
+
+- coverage type
+- claim severity
+
+```{r}
+# Number of claims per coverage type :
+claims_per_coverage <- table(data_nc$coverage)
+# Number of claims per claims severity :
+claims_per_severity <- table(data_nc$severity_cat)
+```
+
+Please create two bar charts : one for the claims count per coverage type, the other for the claims count per severity. While creating these charts you need to :
+
+- color the bars according to the coverage/severity type
+
+And for the best R coders, on one of the charts use the "theme" option of ggplot (http://docs.ggplot2.org/current/theme.html) to : 
+
+- get rid of the coverage/severity type labels on the x axis,
+- place the legend on the left side of the plot.
+
+```{r}
+# Bar chart 1 : claims count per coverage type
+barchart1 <- barplot(xtabs(~data_nc$coverage), col=rainbow(length(levels(data_nc$coverage))), main = "NUMBER OF CLAIMS PER COVERAGE TYPE")
+# Bar chart 2 : claims count per severity
+barchart2 <- barplot(xtabs(~data_nc$severity_cat), col=rainbow(length(levels(data_nc$severity_cat))), main = "NUMBER OF CLAIMS PER SEVERITY")
+```
+
+## 3.c. Create a box plot
+
+Please create two boxplots : one for the average cost per vehicle category, the other per drivability. While creating these charts you need to :
+
+- color the boxes according to the vehicle category/drivability
+
+
+```{r}
+# Boxplot 1 : claims count per coverage type
+boxplot(cost~category, data=data_nc, main="Avg Cost per Category", col=rainbow(length(levels(data_nc$category))), xlab="Category", ylab="Avg Cost")
+  
+# Bar chart 2 : claims count per severity
+boxplot(cost~Drivable, data=data_nc, main="Avg Cost per Drivability", col=rainbow(length(levels(data_nc$Drivable))), xlab="Drivability", ylab="Avg Cost")
+```
+
+**Q8. Look at the boxplot using the "drivable" variable, what do you notice ?**  
+
+**Answer : ** Non drivable vehicles are far more than drivable ones.
+
+# 4. Claims reporting
+
+Explore your dataset using charts is not sufficient to understand how variables are tied together. You will now compute some simple statistics to get a broader view of your data.
+
+## 4.a. Trend reporting
+
+We want to see if a trend is noticeable in the claims count and in the average cost throughout the years.
+To check it, you have to compute the claims count and the average cost year. You just need to compute them *by* year ... Call this new data table "DT_year". 
+
+```{r}
+# Compute claims count and average cost per year :
+DT_year <- aggregate(cost~Year, data=data_nc, sum)
+DT_year$ClaimsCount <- table(data_nc$Year)
+DT_year$avgcostperYear <- DT_year$cost/DT_year$ClaimsCount
+DT_year$ClaimsCount <- as.numeric(DT_year$ClaimsCount)
+DT_year$avgcostperYear <- as.numeric(DT_year$avgcostperYear)
+DT_year$cost <- NULL
+View(DT_year)
+```
+
+**Q9. Display the database created, what do you notice ?**  
+
+**Answer : ** At 2015, even though the freq is lower than the previous years, average cost per claim increased.
+
+Do the same operation bu *by month* this time. Call your new database "DT_month". 
+
+```{r}
+# Compute claims count and average cost per month :
+DT_month <- aggregate(cost~Month, data=data_nc, sum)
+DT_month$ClaimsCount <- table(data_nc$Month)
+DT_month$avgcostperMonth <- DT_month$cost/DT_month$ClaimsCount
+DT_month$cost <- NULL
+DT_month$ClaimsCount <- as.numeric(DT_month$ClaimsCount)
+DT_month$avgcostperMonth <- as.numeric(DT_month$avgcostperMonth)
+View(DT_month)
+```
+
+**Q10. Display the database created, what do you think of minimum and maximum values for each variable ?**  
+
+**Answer : ** June was a bad month for the company :)
+
+## 4.b. Qualify repairer agreement
+
+We now want *you* to better qualify repairers according to their agreement type. You have to create your own small report on this topic !
+
+You are free to compute any statistics you judge useful to better understand repairers behaviour according to their agreement. 
+
+Nevertheless, if you give in your notice, here are some suggestions to carry it out :
+
+- How many no more drivable vehicles each type of repairer handles ?
+- What is the *overall* cost of claims handled by "prefered" repairers holding an agreement ?
+- What is the *average* cost of claims handled by repairers according to their type of agreement ?
+- What is the average power of vehicles repaired according to the type of agreement ?
+- ... Suggest your own analyses !!
+
+```{r}
+# What is the *overall* cost of claims handled by "prefered" repairers holding an agreement?
+DT_overall_prefered <- aggregate(cost~repairer_agreement, data=data_nc, sum)
+View(DT_overall_prefered)
+# What is the *average* cost of claims handled by repairers according to their type of agreement?
+DT_average_prefered <- aggregate(cost~repairer_agreement, data=data_nc, sum)
+DT_average_prefered$ClaimsCount <- table(data_nc$repairer_agreement)
+DT_average_prefered$avgcostperAgreement <- DT_average_prefered$cost/DT_average_prefered$ClaimsCount
+View(DT_average_prefered)
+# What is the average power of vehicles repaired according to the type of agreement?
+DT_average_power <- aggregate(power~repairer_agreement, data=data_nc, sum)
+DT_average_power$ClaimsCount <- table(data_nc$repairer_agreement)
+DT_average_power$avgpowerperAgreement <- DT_average_power$power/DT_average_power$ClaimsCount
+View(DT_average_power)
+# What is the average cost of vehicles repaired according to their brands?
+DT_average_brand <- aggregate(cost~brand, data=data_nc, sum)
+DT_average_brand$ClaimsCount <- table(data_nc$brand)
+DT_average_brand$avgcostperBrand <- DT_average_brand$cost/DT_average_brand$ClaimsCount
+View(DT_average_brand)
+# What is the severity distribution of vehicles repaired according to their brands?
+library(plyr)
+count(data_nc, vars=c("brand", "severity_cat"))
+```
+
+
+# 5. Some insights about code optimization
+
+## 5.a. Example 1 : compute the same calculation a lot of times
+
+Write a function of your own that will take your "DT_byDate" table as an argument and another parameter (guess which one), and that will automatically convert your *euro* costs (averaged and total) into *another currency* and create corresponding columns in the database. Your function must return the complete database, i.e. containing both euros and other currency costs.
+
+```{r}
+# Create the conversion function
+# Apply it : conversion to USD, GBP, CHF, JPY, KRW, TRY, ...
+DT_byDate$USD <- as.numeric("1.07")
+DT_byDate$GBP <- as.numeric("0.70")
+DT_byDate$CHF <- as.numeric("1.08")
+DT_byDate$JPY <- as.numeric("131.25")
+DT_byDate$TRY <- as.numeric("3.04")
+DT_byDate$Cost_in_USD <- DT_byDate$totalCostDay/DT_byDate$USD
+DT_byDate$Cost_in_GBP <- DT_byDate$totalCostDay/DT_byDate$GBP
+DT_byDate$Cost_in_CHF <- DT_byDate$totalCostDay/DT_byDate$CHF
+DT_byDate$Cost_in_JPY <- DT_byDate$totalCostDay/DT_byDate$JPY
+DT_byDate$Cost_in_TRY <- DT_byDate$totalCostDay/DT_byDate$TRY
+# Display head of the final table
+head(DT_byDate)
+```
+
+
+## 5.b. Example 2 : change your database format
+
+We now want to show you how tiring it can be to write a lot of times code statements that are very close to one another. We will create a database needed to carry out trends analyses.
+
+First, use `data.table` tricks to create a database called "DT_byMonth" *from the "DT" database*, which shape sums up to :
+
+- as lines (i.e. individuals) : observation year
+- as columns (i.e. variables) : avergae claims cost for each month, that is "avCostJanuary", "avCostFebruary", ...
+
+```{r}
+# Year and month by statement
+# Create the new database wanted
+# Display the final database
+DT_year_month <- aggregate(cost~Year + Month, data=data_nc, sum)
+DT_freq <- ddply(data_nc, .(Month, Year), nrow)
+head(DT_freq)
+DT_byMonth <- cbind(DT_year_month, DT_freq$V1)
+names(DT_byMonth) [4] <- 'Freq'
+DT_byMonth$avgcost <- DT_byMonth$cost/DT_byMonth$Freq
+DT_byMonth$cost <- NULL
+DT_byMonth$Freq <- NULL
+library(tidyr)
+library(dplyr)
+DT_byMonth_transposed <- spread(DT_byMonth, Month, avgcost, fill = "NoDataYet")
+head(DT_byMonth_transposed)
+```
+
+```
+Second, propose a code or a function which prevent you from writing 12 times "month ==1", "month ==2", ..., and which will do exactly the same thing.
+
+**Tip ;)** : Do not hesitate to use what you've learnt about **loops** !
+
+```{r}
+# Create the new database wanted
+# Display the final database
+old=c("Year","1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12")
+new=c("Year","avCostJanuary", "avCostFebruary", "avCostMarch", "avCostApril", "avCostMay", "avCostJune", "avCostJuly", "avCostAugust", "avCostSeptember", "avCostOctober", "avCostNovember", "avCostDecember")
+for(i in 1:12)names(DT_byMonth_transposed)[names(DT_byMonth_transposed)==old[i]]=new[i]
+head(DT_byMonth_transposed)
+```
