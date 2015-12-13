@@ -1,0 +1,148 @@
+setwd("C:/Rbook")
+#look at the structure
+train_nc <- read.csv("C:/Rbook/train.csv")
+View(train_nc)
+str(train_nc)
+#how many survived
+table(train_nc$Survived)
+#percentage of survival in train set
+prop.table(table(train_nc$Survived))
+#import test dataset
+test <- read.csv("C:/Rbook/test.csv")
+View(test)
+#add a "survived" column to test set
+test$Survived <- rep(0, 418)
+View(test)
+#TRIAL 1
+#have a csv file with all dead "0"
+submit <- data.frame(PassengerID = test$PassengerId, Survived = test$Survived)
+View(submit)
+write.csv(submit, file = "alldead", row.names = FALSE)
+#look at sex variable and how it affected to survival
+summary(train_nc$Sex)
+prop.table(table(train_nc$Sex, train_nc$Survived))
+prop.table(table(train_nc$Sex, train_nc$Survived), 1)
+prop.table(table(train_nc$Sex, train_nc$Survived), 2)
+#assume all female survived
+test$Survived <- 0
+test$Survived[test$Sex == "female"] <- 1
+#look at age variable
+summary(train_nc$Age)
+#add a column for "child or not"
+train_nc$Child <- 0
+train_nc$Child[train_nc$Age < 18] <- 1
+#look the survival percentage for age and sex
+aggregate(Survived ~ Child + Sex, data=train_nc, FUN=sum)
+aggregate(Survived ~ Child + Sex, data=train_nc, FUN=length)
+aggregate(Survived ~ Child + Sex, data=train_nc, FUN= function(x) {sum(x) / length(x)})
+#create a categorized "fare" column
+train_nc$Fare2 <- '30+'
+train_nc$Fare2[train_nc$Fare < 30 & train_nc$Fare >=20] <- '20-30'
+train_nc$Fare2[train_nc$Fare < 20 & train_nc$Fare >=10] <- '10-20'
+train_nc$Fare2[train_nc$Fare < 10] <- '<10'
+View(train_nc)
+#look which passenger class and ticket fare type are most likely to perish
+aggregate(Survived ~ Fare2 + Pclass + Sex, data=train_nc, FUN=function(x) {sum(x) / length(x)})
+#assume class 3 female passengers who had a ticket fared over 20 missed the life boats
+test$Survived <- 0
+test$Survived[test$Sex == "female"] <- 1
+test$Survived[test$Sex == "female" & test$Pclass == 3 & test$Fare >= 20] <- 0
+#TRIAL 2
+submit <- data.frame(PassengerID = test$PassengerId, Survived = test$Survived)
+View(submit)
+write.csv(submit, file = "trial2", row.names = FALSE)
+#use rpart to analyse other variables
+fit <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data=train_nc, method = "class")
+#
+plot(fit)
+#
+text(fit)
+library(rattle)
+library('rpart.plot')
+library('RColorBrewer')
+fancyRpartPlot(fit)
+#on male side, kids below 6 years age and have less than or equal to 2 siblings were survived
+#on female side, highest percentage of survival is at the group with passenger class below and equal to 2
+#TRIAL 3
+Prediction <- predict(fit, test, type = "class")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "prediction_tree1_nc", row.names = FALSE)
+#have a look at the unused "unique" variables
+train_nc$Name[1]
+train <- read.csv("C:/Rbook/train.csv")
+combi <- rbind(train, test)
+combi$Name <- as.character(combi$Name)
+combi$Name[1]
+strsplit(combi$Name[1], split='[,.]')
+strsplit(combi$Name[1], split='[,.]')[[1]][2]
+combi$Title <- sapply(combi$Name, FUN = function(x) {strsplit(x, split='[,.]')[[1]][2]})
+combi$Title <- sub(' ', '', combi$Title)
+table(combi$Title)
+#reduce title variables (combine some of them together)
+combi$Title[combi$Title %in% c('Mme', 'Mlle')] <- 'Mlle'
+combi$Title[combi$Title %in% c('Capt', 'Don', 'Major', 'Sir')] <- 'Sir'
+combi$Title[combi$Title %in% c('Dona', 'Lady', 'the Countess', 'Jonkheer')] <- 'Lady'
+combi$Title <- factor(combi$Title)
+#combine siblings and parents to a new variable = family size
+combi$FamilySize <- combi$SibSp + combi$Parch + 1
+#pick surnames of passengers
+combi$Surname <- sapply(combi$Name, FUN = function(x) {strsplit(x, split='[,.]')[[1]][1]})
+#combine family size and surname for a family id
+combi$FamilyID <- paste(as.character(combi$FamilySize), combi$Surname, sep="")
+combi$FamilyID[combi$FamilySize <= 2] <- 'Small'
+table(combi$FamilyID)
+#there are some families with 3 or more person but have different surnames, looking to separate them
+famIDs <- data.frame(table(combi$FamilyID))
+famIDs <- famIDs[famIDs$Freq <= 2,]
+combi$FamilyID[combi$FamilyID %in% famIDs$Var1] <- 'Small'
+combi$FamilyID <- factor(combi$FamilyID)
+#now that we added some new factors to analyse, split the two datasets
+train_nc <- combi[1:891,]
+test <- combi[892:1309,]
+#prediction
+#TRIAL 4
+fit <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID, data=train_nc, method = "class")
+fancyRpartPlot(fit)
+Prediction <- predict(fit, test, type = "class")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "prediction_tree2_titles_etc_nc", row.names = FALSE)
+#get rid of blanks and NAs
+summary(combi$Age)
+Agefit <- rpart(Age ~ Pclass + Sex + SibSp + Parch + Fare + Embarked + Title + FamilySize, data=combi[!is.na(combi$Age),], method = "anova")
+combi$Age[is.na(combi$Age)] <- predict(Agefit, combi[is.na(combi$Age),])
+summary(combi$Age)
+#
+summary(combi$Embarked)
+which(combi$Embarked == '')
+combi$Embarked[c(62,830)] <- "S"
+combi$Embarked <- factor(combi$Embarked)
+#
+summary(combi$Fare)
+which(is.na(combi$Fare))
+combi$Fare[1044] <- median(combi$Fare, na.rm=TRUE)
+#
+combi$FamilyID2 <- combi$FamilyID
+combi$FamilyID2 <- as.character(combi$FamilyID2)
+combi$FamilyID2[combi$FamilySize <= 3] <- 'Small'
+combi$FamilyID2 <- factor(combi$FamilyID2)
+train_nc <- combi[1:891,]
+test <- combi[892:1309,]
+#
+library(randomForest)
+set.seed(100)
+#
+fit <- randomForest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID2, data=train_nc, importance=TRUE, ntree=2000)
+#
+varImpPlot(fit)
+# TRIAL 5
+Prediction <- predict(fit, test)
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "forest_nc", row.names = FALSE)
+#
+library(party)
+set.seed(100)
+fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID2, data=train_nc, controls=cforest_unbiased(ntree=2000, mtry=3))
+# TRIAL 6
+Prediction <- predict(fit, test, OOB=TRUE, type = "response")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "forest2_nc", row.names = FALSE)
