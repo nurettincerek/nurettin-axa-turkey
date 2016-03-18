@@ -1,0 +1,202 @@
+---
+title: "Non Motor Fraud Characteristics"
+author: "Nurettin Cerek - Axa Turkey"
+date: "Tuesday, March 15, 2016"
+output: html_document
+---
+![logo](https://www.axasigorta.com.tr/sagligimtamam/images/logos/axa-sigorta-com.gif)
+
+```{r, echo=FALSE}
+nc <- read.delim("C:/Users/ncerek/Desktop/DATA_SCIENCE_PROJECT_NC/nc.txt")
+set.seed=123
+```
+
+```{r, include=FALSE}
+if (!require("gbm")) {
+  install.packages("gbm", repos="http://cran.rstudio.com/") 
+  library(gbm)
+}
+if (!require("data.table")) {
+    library(data.table)
+}
+if (!require("ROCR")) {
+    install.packages("ROCR", repos="http://cran.rstudio.com/") 
+    library(ROCR)
+}
+if (!require("verification")) {
+    install.packages("verification", repos="http://cran.rstudio.com/") 
+    require(verification)
+}
+```
+
+##Purpose:
+The purpose of this data science project is to determine the most important variables of a fraudulent fire claim file; I hope this would be the base of a scoring and self detecting fraud model for non-motor claims fraud detection in Turkey.
+
+##Understanding the data:
+As we only have Axa Turkey's fraud data for last 15 years, data consists of `r nrow(nc)` claim files with `r ncol(nc)` variables, including datas regarding:
+
++ Claim file
++ Customer
++ Survey
++ Indemnity
++ Fraud investigation
++ Dates
+
+```{r, echo=FALSE}
+fraudrate <- as.data.frame((table(nc$FRAUD) / nrow(nc))*100)
+```
+The fraud rate of my dataset is `r fraudrate[2,2]`%
+
+##Data manipulation & Data Engineering
+After importing from excel file, I turned some data to right formats:
+
++ Dates
++ Payment and revenue datas
++ Datas those are supposed to be factor (like the Notifier Code)
+
+Data engineering mostly done about day differences, since those variables are quite important to detect a fraud case manually.
+
+```{r, echo=F}
+nc$FRAUD <- as.numeric(nc$FRAUD)
+nc$SAVING <- as.integer(nc$SAVING)
+nc$IND_PAY <- as.integer(nc$IND_PAY)
+nc$REVENUE <- as.integer(nc$REVENUE)
+nc$EARNED_PREMIUM <- as.integer(nc$EARNED_PREMIUM)
+nc$AGENCY_COMM <- as.integer(nc$AGENCY_COMM)
+nc$MAX_CLAIM <- as.integer(nc$MAX_CLAIM)
+nc$PAID_CLAIM <- as.integer(nc$PAID_CLAIM)
+nc$OUTST_CLAIM <- as.integer(nc$OUTST_CLAIM)
+nc$MAX_OUTST_CLAIM <- as.integer(nc$MAX_OUTST_CLAIM)
+nc$MONTHS_CLIENT <- as.integer(nc$MONTHS_CLIENT)
+nc$LOYALTY <- as.integer(nc$LOYALTY)
+nc$CLAIM_FILE_NUM <- as.integer(nc$CLAIM_FILE_NUM)
+nc$NOTIFIER_CODE <- as.factor(nc$NOTIFIER_CODE)
+nc$CLAIM_DATE <- as.Date(nc$CLAIM_DATE, "%d.%m.%Y")
+nc$FILE_DATE <- as.Date(nc$FILE_DATE, "%d.%m.%Y")
+nc$LOSS_ADJ_APP <- as.Date(nc$LOSS_ADJ_APP, "%d.%m.%Y")
+nc$POL_START <- as.Date(nc$POL_START, "%d.%m.%Y")
+nc$POL_END <- as.Date(nc$POL_END, "%d.%m.%Y")
+nc$POL_ISSUE <- as.Date(nc$POL_ISSUE, "%d.%m.%Y")
+nc$END_START <- as.Date(nc$END_START, "%d.%m.%Y")
+nc$END_END <- as.Date(nc$END_END, "%d.%m.%Y")
+nc$END_ISSUE <- as.Date(nc$END_ISSUE, "%d.%m.%Y")
+nc$BIRTHDATE <- as.Date(nc$BIRTHDATE, "%d.%m.%Y")
+nc$AGE <- as.integer((Sys.Date()- nc$BIRTHDATE)/365)
+nc$NOTIF_DAYS <- as.integer(nc$FILE_DATE - nc$CLAIM_DATE)
+nc$CLAIM_DAYS_FROMSTART <- as.integer(nc$CLAIM_DATE - nc$POL_START)
+nc$CLAIM_DAYS_FROMISSUE <- as.integer(nc$CLAIM_DATE - nc$POL_ISSUE)
+nc$ISSUE_DAYS <- as.integer(nc$POL_ISSUE - nc$POL_START)
+nc$ENDORS_DAYS <- as.integer(nc$END_ISSUE - nc$CLAIM_DATE)
+nc$DAY <- as.factor(weekdays(nc$CLAIM_DATE))
+nc$MONTH <- as.factor(month(nc$CLAIM_DATE))
+```
+
+##Preparation for modeling
+First phase was the exclusion of:
+
++ Any variable that has too many levels (more than 200)
++ Any variable that is too specific and has a potential of overfitting
++ Any variable that is not relevant to a possible fraud case
+
+```{r}
+exclude <- c("REF_NO", "POLICY_NO", "END_NO", "AGENCY_CODE", "CLIENT_CODE", "ID", "TAX_ID", "COUNTY", "MT", "LOSS_ADJ", "LOSS_ADJ_CODE", "NOTIFIER_CODE", "SAVING", "REP_TYPE", "IND_PAY", "LINE_OF_BUSINESS", "TYPE_BUILD", "POL_COUNTY", "POL_DISTRICT", "POL_AVENUE", "POL_STREET", "POL_BUIL_NO", "POL_DOOR", "POL_BUIL_NAME",  "INVEST_CODE", "BIRTHPLACE", "FATHERSNAME", "BIRTHCITY", "BIRTHCOUNTY", "RESIDENCE_COUNTY", "EARNED_PREMIUM", "AGENCY_COMM", "MAX_OUTST_CLAIM", "OUTST_CLAIM", "CLAIM_DATE","FILE_DATE", "LOSS_ADJ_APP", "POL_START", "POL_END", "POL_ISSUE", "END_START", "END_END", "END_ISSUE", "BIRTHDATE")
+```
+
+##Modeling Phase
+I've chosen GBM, as it's pretty good for a binomial classification modeling like "fraud or not". Some other advantages are:
+
++ Handles NA's
++ Fast processing
+
+###Dividing the data set: Train / Test
+I've used the usual 80% - 20% percentage (after trying 70-30, 60-40 and 90-10)
+```{r}
+db <- (sample(1:nrow(nc), nrow(nc) * 0.8))
+test <- nc[-db,]
+train <- nc[db,]
+test <- as.data.table(test)
+train <- as.data.table(train)
+```
+To compare the fraud rate in each data set
+```{r}
+100*table(train$FRAUD)/nrow(train)
+100*table(test$FRAUD)/nrow(test)
+```
+
+###Defining Parameters
+I tried several options for iteration number, interaction depth and shrinkage and applied out-of-bag estimator to see if I have the optimal number of iterations after first run.
+
+```{r}
+param = c(100, 10, 0.003)
+```
+
+###Modeling
+```{r}
+g = gbm(FRAUD ~ ., data=train[, !exclude, with=F],n.trees = param[1],interaction.depth = param[2],shrinkage = param[3], bag.fraction=0.5,train.fraction=0.8,distribution = "bernoulli", verbose=T)
+```
+####Iteration Number Check with Validation and Test Deviance Graph (gbm.perf)
+**With method = OOB**
+```{r}
+gbm.perf(g,method="OOB")
+```
+**With method = test**
+```{r}
+gbm.perf(g,method="test")
+```
+
+```{r, echo=F}
+summary(g)
+```
+As you could see in the summary, the most effective variables of a fire fraud case are:
+
++ **MONTH**: On which month the claim occured?
++ **POL_CITY**: Where the risk is?
++ **MONTHS_CLIENT**: Loyalty indicator?
++ **CLAIM_FILE_NUM**: What is the claim history of the insured?
++ **CLAIM_CODE**: What is the claim reason?
++ **DAY**: On which day of the week the claim occured?
++ **CITY**: Where the claim happened?
++ **BLACK_LIST**: Is the insured in our "black list"?
++ **MAX_CLAIM**: Max paid claim to the insured?
++ **INVESTIGATOR**: Has the insured a claim file before, for which an investigator was appointed?
++ **LOYALTY**: Loyalty score of the client.
++ **RESIDENCE_CITY**: Where the insured lives? Important if the client lives in another city and 
+purchases the policy from another.
++ **CLAIM_DAYS_FROMSTART**: How many days between the policy start and the claim?
+
+###Prediction
+```{r}
+pf = predict(g, test, n.trees = param[1], type = "response")
+pred<-prediction(pf,test$FRAUD)
+```
+```{r, echo=FALSE}
+hist(pf)
+summary(pf)
+```
+
+##Compute The Performance Of Your Model-Prediction-Features
+###ROC Curve
+```{r, echo=FALSE}
+perf1 <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf1)
+abline(a=0,b=1, col="red", lty=2)
+```
+**A**rea **U**nder the **C**urve is `r roc.area(test$FRAUD, pf)$A`
+
+###Precision / Recall Curve
+```{r, echo=FALSE}
+perf2 <- performance(pred, measure = "prec", x.measure = "rec")
+plot(perf2)
+```
+
+###Sensitivity/specificity Curve
+```{r, echo=FALSE}
+perf3 <- performance(pred, measure = "sens", x.measure = "spec")
+plot(perf3)
+```
+
+###Lift Curve
+```{r, echo=FALSE}
+perf4 <- performance(pred,measure="lift", x.measure="rpp")
+plot(perf4)
+```
